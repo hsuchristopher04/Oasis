@@ -10,7 +10,7 @@
 #include <Oasis/Variable.hpp>
 
 std::vector<long long> getAllFactors(long long n)
-{//utf
+{
     std::vector<long long> answer;
     for (long long i = 1; i * i <= n; i++) {
         if (n % i == 0) {
