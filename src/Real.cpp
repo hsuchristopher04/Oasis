@@ -4,18 +4,18 @@
 
 #include <string>
 
+#include "Oasis/Add.hpp"
+#include "Oasis/Integral.hpp"
+#include "Oasis/Multiply.hpp"
 #include "Oasis/Real.hpp"
+#include "Oasis/RecursiveCast.hpp"
+#include "Oasis/Variable.hpp"
 
 namespace Oasis {
 
 Real::Real(double value)
     : value(value)
 {
-}
-
-auto Real::Differentiate(const Expression&) -> std::unique_ptr<Expression>
-{
-    return std::make_unique<Real>(0);
 }
 
 auto Real::Equals(const Expression& other) const -> bool
@@ -28,19 +28,28 @@ auto Real::GetValue() const -> double
     return value;
 }
 
-auto Real::ToString() const -> std::string
+auto Real::Integrate(const Expression& integrationVariable) const -> std::unique_ptr<Expression>
 {
-    return std::to_string(value);
-}
+    SimplifyVisitor simplifyVisitor {};
+    if (auto variable = RecursiveCast<Variable>(integrationVariable); variable != nullptr) {
+        // Constant rule
+        if (value != 0) {
 
-auto Real::Specialize(const Expression& other) -> std::unique_ptr<Real>
-{
-    return other.Is<Real>() ? std::make_unique<Real>(dynamic_cast<const Real&>(other)) : nullptr;
-}
+            Add adder {
+                Multiply<Real, Variable> { Real { value }, Variable { (*variable).GetName() } },
+                Variable { "C" }
+            };
 
-auto Real::Specialize(const Expression& other, tf::Subflow&) -> std::unique_ptr<Real>
-{
-    return other.Is<Real>() ? std::make_unique<Real>(dynamic_cast<const Real&>(other)) : nullptr;
+            return std::move(adder.Accept(simplifyVisitor)).value();
+        }
+
+        // Zero rule
+        return std::make_unique<Variable>(Variable { "C" });
+    }
+
+    Integral<Expression, Expression> integral { *(this->Copy()), *(integrationVariable.Copy()) };
+
+    return integral.Copy();
 }
 
 } // namespace Oasis

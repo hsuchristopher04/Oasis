@@ -1,18 +1,20 @@
 #ifndef OASIS_EXPRESSION_HPP
 #define OASIS_EXPRESSION_HPP
 
-#include <concepts>
+#include <cstdint>
+#include <expected>
 #include <memory>
-#include <string>
 #include <vector>
 
-namespace tf {
-class Subflow;
-}
+#include <boost/any/unique_any.hpp>
+
+#include "Concepts.hpp"
 
 namespace Oasis {
 
-class Expression;
+using any = boost::anys::unique_any;
+
+class Visitor;
 
 /**
  * The type of an expression.
@@ -28,10 +30,16 @@ enum class ExpressionType {
     Divide,
     Exponent,
     Log,
+    Integral,
     Limit,
     Derivative,
     Negate,
     Sqrt,
+    Matrix,
+    Pi,
+    EulerNumber,
+    Magnitude,
+    Sine
 };
 
 /**
@@ -44,28 +52,6 @@ enum ExpressionCategory : uint32_t {
     BinExp = 1 << 2,
     UnExp = 1 << 3,
 };
-
-// clang-format off
-/**
- * An expression concept.
- *
- * An expression concept is a type that satisfies the following requirements:
- * - It is derived from `Expression`.
- * - It has a static `Specialize` function that returns a `std::unique_ptr<T>` and takes a `const Expression&` as an argument.
- * - It has a static `Specialize` function that returns a `std::unique_ptr<T>` and takes a `const Expression&` and a `tf::Subflow&` as arguments.
- * - It has a static `GetStaticCategory` function that returns a `uint32_t`.
- * - It has a static `GetStaticType` function that returns an `ExpressionType`.
- *
- * @tparam T The type to check.
- */
-template <typename T>
-concept IExpression = (requires(T, const Expression& other, tf::Subflow& subflow) {
-    { T::Specialize(other) } -> std::same_as<std::unique_ptr<T>>;
-    { T::Specialize(other, subflow) } -> std::same_as<std::unique_ptr<T>>;
-    { T::GetStaticCategory() } -> std::same_as<uint32_t>;
-    { T::GetStaticType() } -> std::same_as<ExpressionType>;
-} && std::derived_from<T, Expression>) || std::is_same_v<T, Expression>;
-// clang-format on
 
 /**
  * An expression.
@@ -83,17 +69,10 @@ public:
     [[nodiscard]] virtual auto Copy() const -> std::unique_ptr<Expression> = 0;
 
     /**
-     * Copies this expression.
-     * @param subflow The invoking subflow.
-     * @return A copy of this expression.
-     */
-    virtual auto Copy(tf::Subflow& subflow) const -> std::unique_ptr<Expression> = 0;
-
-    /**
      * Tries to differentiate this function.
      * @return the differentiated expression.
      */
-    [[nodiscard]] virtual auto Differentiate(const Expression&) -> std::unique_ptr<Expression>;
+    [[nodiscard]] auto Differentiate(const Expression&) const -> std::unique_ptr<Expression>;
 
     /**
      * Compares this expression to another expression for equality.
@@ -140,46 +119,18 @@ public:
     [[nodiscard]] virtual auto Generalize() const -> std::unique_ptr<Expression>;
 
     /**
-     * Converts this expression to a more general expression asynchronously.
+     * Attempts to integrate this expression using integration rules
      *
-     * Some expressions may explicitly specify the type of their operands. For example, a
-     * `Divide<Real>` expression may only accept `Real` operands. This function converts the
-     * expression to a more general expression, such as `Divide<Expression>`, which accepts any
-     * expression as an operand.
-     *
-     * @param subflow The invoking subflow.
-     * @return The generalized expression.
+     * @return An indefinite integral of the expression added to a constant
      */
-    virtual auto Generalize(tf::Subflow& subflow) const -> std::unique_ptr<Expression>;
+    [[nodiscard]] virtual auto Integrate(const Expression&) const -> std::unique_ptr<Expression>;
 
     /**
-     * Attempts to specialize this expression to a more specific expression.
+     * Attempts to integrate this expression using integration rules
      *
-     * Some expressions may explicitly specify the type of their operands. For example, a
-     * `Divide<Real>` expression may only accept `Real` operands. This function attempts to
-     * specialize the expression to a more specific expression, such as `Divide<Real>`, which
-     * accepts only `Real` operands. If the expression cannot be specialized, this function returns
-     * `nullptr`.
-     *
-     * @param other The other expression to specialize against.
-     * @return The specialized expression, or `nullptr` if the expression cannot be specialized.
+     * @return A solved definite integral of the expression
      */
-    static auto Specialize(const Expression& other) -> std::unique_ptr<Expression>;
-
-    /**
-     * Attempts to specialize this expression to a more specific expression asynchronously.
-     *
-     * Some expressions may explicitly specify the type of their operands. For example, a
-     * `Divide<Real>` expression may only accept `Real` operands. This function attempts to
-     * specialize the expression to a more specific expression, such as `Divide<Real>`, which
-     * accepts only `Real` operands. If the expression cannot be specialized, this function returns
-     * `nullptr`.
-     *
-     * @param other The other expression to specialize against.
-     * @param subflow The invoking subflow.
-     * @return The specialized expression, or `nullptr` if the expression cannot be specialized.
-     */
-    static auto Specialize(const Expression& other, tf::Subflow& subflow) -> std::unique_ptr<Expression>;
+    [[nodiscard]] virtual auto IntegrateWithBounds(const Expression&, const Expression&, const Expression&) -> std::unique_ptr<Expression>;
 
     /**
      * Gets whether this expression is of a specific type.
@@ -193,7 +144,15 @@ public:
         return GetType() == T::GetStaticType();
     }
 
+    template <template <typename> typename T>
+        requires(DerivedFromUnaryExpression<T<Expression>> && !DerivedFromBinaryExpression<T<Expression>>)
+    [[nodiscard]] bool Is() const
+    {
+        return GetType() == T<Expression>::GetStaticType();
+    }
+
     template <template <typename, typename> typename T>
+        requires DerivedFromBinaryExpression<T<Expression, Expression>>
     [[nodiscard]] bool Is() const
     {
         return GetType() == T<Expression, Expression>::GetStaticType();
@@ -203,23 +162,7 @@ public:
      * Simplifies this expression.
      * @return The simplified expression.
      */
-    [[nodiscard]] virtual auto Simplify() const -> std::unique_ptr<Expression>;
-
-    /**
-     * Simplifies this expression asynchronously.
-     *
-     * @note You probably want to use `SimplifyAsync` instead. This is an internal function that
-     *       should only be used by the expression simplification system.
-     * @param subflow The invoking subflow.
-     * @return The simplified expression.
-     */
-    virtual auto Simplify(tf::Subflow& subflow) const -> std::unique_ptr<Expression>;
-
-    /**
-     * Simplifies this expression asynchronously.
-     * @return The simplified expression.
-     */
-    [[nodiscard]] auto SimplifyAsync() const -> std::unique_ptr<Expression>;
+    [[nodiscard]] [[deprecated]] auto Simplify() const -> std::unique_ptr<Expression>;
 
     /**
      * Checks whether this expression is structurally equivalent to another expression.
@@ -233,43 +176,46 @@ public:
      */
     [[nodiscard]] virtual auto StructurallyEquivalent(const Expression& other) const -> bool = 0;
 
-    /**
-     * Checks whether this expression is structurally equivalent to another expression asynchronously.
-     *
-     * Two expressions are structurally equivalent if the share the same tree structure. For
-     * example, `Add<Real>(Real(1), Real(2))` and `Add<Real>(Real(2), Real(1))` are structurally equivalent
-     * despite having different values.
-     *
-     * @note You probably want to use `StructurallyEquivalentAsync` instead. This is an internal function that
-     *       should only be used by `StructurallyEquivalentAsync`.
-     *
-     * @param other The other expression.
-     * @param subflow The invoking subflow.
-     * @return Whether the two expressions are structurally equivalent.
-     */
-    virtual auto StructurallyEquivalent(const Expression& other, tf::Subflow& subflow) const -> bool = 0;
-
-    /**
-     * Checks whether this expression is structurally equivalent to another expression asynchronously.
-     *
-     * Two expressions are structurally equivalent if the share the same tree structure. For
-     * example, `Add<Real>(Real(1), Real(2))` and `Add<Real>(Real(2), Real(1))` are structurally equivalent
-     * despite having different values.
-     *
-     * @param other The other expression.
-     * @return Whether the two expressions are structurally equivalent.
-     */
-    [[nodiscard]] auto StructurallyEquivalentAsync(const Expression& other) const -> bool;
     [[nodiscard]] virtual auto Substitute(const Expression& var, const Expression& val) -> std::unique_ptr<Expression> = 0;
 
-    /**
-     * Converts this expression to a string.
-     * @return The string representation of this expression.
-     */
-    [[nodiscard]] virtual std::string ToString() const = 0;
+    template <IVisitor T>
+    auto Accept(T& visitor) const -> std::expected<typename T::RetT, std::string_view>;
+
+    template <IVisitor T>
+        requires ExpectedWithString<typename T::RetT>
+    auto Accept(T& visitor) const -> typename T::RetT;
 
     virtual ~Expression() = default;
+
+protected:
+    /**
+     * This function serializes the expression object.
+     *
+     * @param visitor The serializer class object to write the Expression data.
+     */
+    virtual any AcceptInternal(Visitor& visitor) const = 0;
 };
+
+template <IVisitor T>
+auto Expression::Accept(T& visitor) const -> std::expected<typename T::RetT, std::string_view>
+{
+    try {
+        return boost::any_cast<typename T::RetT>(this->AcceptInternal(visitor));
+    } catch (boost::bad_any_cast& e) {
+        return std::unexpected { e.what() };
+    }
+}
+
+template <IVisitor T>
+    requires ExpectedWithString<typename T::RetT>
+auto Expression::Accept(T& visitor) const -> typename T::RetT
+{
+    try {
+        return boost::any_cast<typename T::RetT>(this->AcceptInternal(static_cast<Visitor&>(visitor)));
+    } catch (boost::bad_any_cast& e) {
+        return std::unexpected { e.what() };
+    }
+}
 
 #define EXPRESSION_TYPE(type)                       \
     auto GetType() const -> ExpressionType override \
@@ -292,10 +238,6 @@ public:
     {                                                     \
         return category;                                  \
     }
-
-#define DECL_SPECIALIZE(type)                                                 \
-    static auto Specialize(const Expression& other) -> std::unique_ptr<type>; \
-    static auto Specialize(const Expression& other, tf::Subflow&) -> std::unique_ptr<type>;
 
 } // namespace Oasis
 

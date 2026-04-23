@@ -5,16 +5,9 @@
 #ifndef OASIS_DERIVATIVE_HPP
 #define OASIS_DERIVATIVE_HPP
 
-#include "fmt/core.h"
-
 #include "BinaryExpression.hpp"
-#include "Expression.hpp"
-#include "Real.hpp"
 
 namespace Oasis {
-
-template <IExpression Exp, IExpression Var>
-class Derivative;
 
 /// @cond
 template <>
@@ -25,45 +18,57 @@ public:
 
     Derivative(const Expression& Exp, const Expression& Var);
 
-    [[nodiscard]] auto Simplify() const -> std::unique_ptr<Expression> final;
-    // auto Simplify(tf::Subflow& subflow) const -> std::unique_ptr<Expression> final;
-
-    [[nodiscard]] auto ToString() const -> std::string final;
-
-    static auto Specialize(const Expression& other) -> std::unique_ptr<Derivative>;
-    static auto Specialize(const Expression& other, tf::Subflow& subflow) -> std::unique_ptr<Derivative>;
-
     EXPRESSION_TYPE(Derivative)
     EXPRESSION_CATEGORY(BinExp)
 };
 /// @endcond
 
 /**
- * The Derivative expression Derivatives the expression given
+ * The Derivative class template calculates the derivative of given expressions.
+ * The Derivative class template can take two and only two parameters.
  *
- * @tparam Exp The expression to be Derived.
- * @tparam Var The variable to be Derived on.
+ * @section Parameters:
+ * @tparam DependentT The expression type that the derivative will be calculated of.
+ * @tparam IndependentT The type of the variable with respect to which the derivative will be calculated.
+ *
+ * @section Example Usage:
+ *
+ *
+ * @subsection simple Simple derivative function
+ * @code
+ * std::string exp = {"3x^3+x^2+5x+1"};
+
+    const auto preproc = Oasis::PreProcessInFix(exp);
+    auto midResult = Oasis::FromInFix(preproc);
+
+    const std::unique_ptr<Oasis::Expression> expression = std::move(midResult).value();
+
+    Oasis::Derivative dv {
+        *expression,
+        Oasis::Variable{"x"}
+    };
+    Oasis::InFixSerializer result;
+
+    auto resultant = dv.Simplify();
+
+    std::println("Result: {}", resultant->Accept(result).value());
+    // Will print: (((9*(x^2))+(2*x))+5)
+ * @endcode
+ *
  */
-template <IExpression Exp = Expression, IExpression Var = Exp>
-class Derivative : public BinaryExpression<Derivative, Exp, Var> {
+template <typename DependentT = Expression, typename IndependentT = DependentT>
+class Derivative : public BinaryExpression<Derivative, DependentT, IndependentT> {
 public:
     Derivative() = default;
-    Derivative(const Derivative<Exp, Var>& other)
-        : BinaryExpression<Derivative, Exp, Var>(other)
+    Derivative(const Derivative<DependentT, IndependentT>& other)
+        : BinaryExpression<Derivative, DependentT, IndependentT>(other)
     {
     }
 
-    Derivative(const Exp& exp, const Var& var)
-        : BinaryExpression<Derivative, Exp, Var>(exp, var)
+    Derivative(const DependentT& exp, const IndependentT& var)
+        : BinaryExpression<Derivative, DependentT, IndependentT>(exp, var)
     {
     }
-
-    [[nodiscard]] auto ToString() const -> std::string final
-    {
-        return fmt::format("(d/d{}({}))", this->leastSigOp->ToString(), this->mostSigOp->ToString());
-    }
-
-    IMPL_SPECIALIZE(Derivative, Exp, Var)
 
     auto operator=(const Derivative& other) -> Derivative& = default;
 

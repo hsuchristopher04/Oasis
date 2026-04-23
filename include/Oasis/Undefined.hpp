@@ -22,11 +22,6 @@ public:
     EXPRESSION_TYPE(None)
     EXPRESSION_CATEGORY(UnExp)
 
-    [[nodiscard]] auto ToString() const -> std::string final;
-
-    static auto Specialize(const Expression& other) -> std::unique_ptr<Undefined>;
-    static auto Specialize(const Expression& other, tf::Subflow& subflow) -> std::unique_ptr<Undefined>;
-
     auto operator=(const Undefined& other) -> Undefined& = default;
 };
 

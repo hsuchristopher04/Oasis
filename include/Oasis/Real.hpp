@@ -30,11 +30,7 @@ public:
      */
     [[nodiscard]] auto GetValue() const -> double;
 
-    [[nodiscard]] auto ToString() const -> std::string final;
-
-    static auto Specialize(const Expression& other) -> std::unique_ptr<Real>;
-    static auto Specialize(const Expression& other, tf::Subflow& subflow) -> std::unique_ptr<Real>;
-    [[nodiscard]] auto Differentiate(const Expression&) -> std::unique_ptr<Expression> final;
+    [[nodiscard]] auto Integrate(const Expression& integrationVariable) const -> std::unique_ptr<Expression> final;
 
     auto operator=(const Real& other) -> Real& = default;
 

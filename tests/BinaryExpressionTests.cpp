@@ -5,11 +5,15 @@
 
 #include "Oasis/Add.hpp"
 #include "Oasis/Multiply.hpp"
-#include "Oasis/Real.hpp"
-#include "Oasis/Variable.hpp"
 #include "Oasis/Negate.hpp"
+#include "Oasis/Real.hpp"
+#include "Oasis/RecursiveCast.hpp"
+#include "Oasis/SimplifyVisitor.hpp"
+#include "Oasis/Variable.hpp"
 
-TEST_CASE("Specialize Considers Commutative Property", "[Symbolic]")
+inline Oasis::SimplifyVisitor simplifyVisitor {};
+
+TEST_CASE("Recursive Cast Considers Commutative Property", "[Symbolic]")
 {
     Oasis::Add add {
         Oasis::Add {
@@ -19,7 +23,7 @@ TEST_CASE("Specialize Considers Commutative Property", "[Symbolic]")
     };
 
     auto generalizedAdd = add.Generalize();
-    auto result1 = Oasis::Add<Oasis::Real, Oasis::Add<Oasis::Real>>::Specialize(*generalizedAdd);
+    auto result1 = Oasis::RecursiveCast<Oasis::Add<Oasis::Real, Oasis::Add<Oasis::Real>>>(*generalizedAdd);
     REQUIRE(result1 != nullptr);
 
     Oasis::Multiply multiply {
@@ -30,7 +34,7 @@ TEST_CASE("Specialize Considers Commutative Property", "[Symbolic]")
     };
 
     auto generalizedMultiply = multiply.Generalize();
-    auto result2 = Oasis::Multiply<Oasis::Variable, Oasis::Expression>::Specialize(*generalizedMultiply);
+    auto result2 = Oasis::RecursiveCast<Oasis::Multiply<Oasis::Variable, Oasis::Expression>>(*generalizedMultiply);
     REQUIRE(result2 != nullptr);
 }
 
@@ -44,7 +48,7 @@ TEST_CASE("Specialize Recursively Considers Commutative Property", "[Symbolic]")
     };
 
     auto generalizedAdd = add.Generalize();
-    auto result1 = Oasis::Add<Oasis::Real, Oasis::Add<Oasis::Real, Oasis::Expression>>::Specialize(*generalizedAdd);
+    auto result1 = Oasis::RecursiveCast<Oasis::Add<Oasis::Real, Oasis::Add<Oasis::Real, Oasis::Expression>>>(*generalizedAdd);
     REQUIRE(result1 != nullptr);
 
     Oasis::Multiply multiply {
@@ -57,7 +61,7 @@ TEST_CASE("Specialize Recursively Considers Commutative Property", "[Symbolic]")
     auto generalizedMultiply = multiply.Generalize();
 
     // intentionally out of order
-    auto result2 = Oasis::Multiply<Oasis::Variable, Oasis::Multiply<Oasis::Real, Oasis::Variable>>::Specialize(*generalizedMultiply);
+    auto result2 = Oasis::RecursiveCast<Oasis::Multiply<Oasis::Variable, Oasis::Multiply<Oasis::Real, Oasis::Variable>>>(*generalizedMultiply);
     REQUIRE(result2 != nullptr);
 }
 
@@ -221,30 +225,15 @@ TEST_CASE("Equals follows associativity and commutativity")
 TEST_CASE("Substitute Binary", "[Substitute]")
 {
     Oasis::Add<Oasis::Multiply<Oasis::Real, Oasis::Variable>> before {
-            Oasis::Multiply<Oasis::Real, Oasis::Variable> {
-                    Oasis::Real { 2.0 },
-                    Oasis::Variable { "x" } },
-            Oasis::Multiply<Oasis::Real, Oasis::Variable> {
-                    Oasis::Real { 3.0 },
-                    Oasis::Variable { "x" } } }; // 2x+3x
-
-                    auto after = before.Substitute(Oasis::Variable { "x" }, Oasis::Real { 4.0 }); // after should some std::unique_ptr<Expression> such that it equals 2(4) + 3(4)
-                    Oasis::Real twenty {20};
-    REQUIRE(after->Equals(*(twenty.Simplify())));
-}
-
-TEST_CASE("Substitute Unary", "[Substitute]")
-{
-    Oasis::Add<Oasis::Multiply<Oasis::Real, Oasis::Negate<Oasis::Variable>>,
-            Oasis::Multiply<Oasis::Real, Oasis::Variable>> before {
-            Oasis::Multiply<Oasis::Real, Oasis::Negate<Oasis::Variable>> {
-                    Oasis::Real { 2.0 },
-                    Oasis::Negate {Oasis::Variable { "x" } }},
-            Oasis::Multiply<Oasis::Real, Oasis::Variable> {
-                    Oasis::Real { 3.0 },
-                    Oasis::Variable { "x" } } }; // 2x+3x
+        Oasis::Multiply<Oasis::Real, Oasis::Variable> {
+            Oasis::Real { 2.0 },
+            Oasis::Variable { "x" } },
+        Oasis::Multiply<Oasis::Real, Oasis::Variable> {
+            Oasis::Real { 3.0 },
+            Oasis::Variable { "x" } }
+    }; // 2x+3x
 
     auto after = before.Substitute(Oasis::Variable { "x" }, Oasis::Real { 4.0 }); // after should some std::unique_ptr<Expression> such that it equals 2(4) + 3(4)
-    Oasis::Real four {4};
-    REQUIRE(after->Equals(*(four.Simplify())));
+    Oasis::Real twenty { 20 };
+    REQUIRE(after->Equals(*(twenty.Accept(simplifyVisitor).value())));
 }

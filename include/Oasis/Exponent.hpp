@@ -5,16 +5,10 @@
 #ifndef OASIS_EXPONENT_HPP
 #define OASIS_EXPONENT_HPP
 
-#include "fmt/core.h"
-
 #include "BinaryExpression.hpp"
-#include "Real.hpp"
 #include "Variable.hpp"
 
 namespace Oasis {
-
-template <IExpression BaseT, IExpression PowerT>
-class Exponent;
 
 /// @cond
 template <>
@@ -25,14 +19,7 @@ public:
 
     Exponent(const Expression& base, const Expression& power);
 
-    [[nodiscard]] auto Simplify() const -> std::unique_ptr<Expression> final;
-    auto Simplify(tf::Subflow& subflow) const -> std::unique_ptr<Expression> final;
-
-    [[nodiscard]] auto ToString() const -> std::string final;
-    [[nodiscard]] auto Differentiate(const Expression& differentiationVariable) -> std::unique_ptr<Expression> final;
-
-    static auto Specialize(const Expression& other) -> std::unique_ptr<Exponent>;
-    static auto Specialize(const Expression& other, tf::Subflow& subflow) -> std::unique_ptr<Exponent>;
+    [[nodiscard]] auto Integrate(const Expression& integrationVariable) const -> std::unique_ptr<Expression> final;
 
     EXPRESSION_TYPE(Exponent)
     EXPRESSION_CATEGORY(BinExp)
@@ -42,10 +29,56 @@ public:
 /**
  * The exponent expression creates an exponent two expressions.
  *
+ * @section param Parameters:
  * @tparam BaseT The expression to be used as the base.
  * @tparam PowerT The expression to be used as the power.
+ *
+ * @section examples Example Usage:
+ *
+ * @subsection eval Evaluating Real values:
+ * @code
+ * // std::string exp = {"x+5"};
+
+    Oasis::Exponent exp {
+        Oasis::Real{5},
+        Oasis::Real{5}
+    };
+    Oasis::InFixSerializer result;
+
+    auto resultant = exp.Simplify();
+
+    std::println("Result: {}", resultant->Accept(result).value());
+    // Will print: 3125
+ * @endcode
+ *
+ * @subsection expr Raising an Expression by another Expression:
+ * @note While Exponent will accept two expressions, it may not be in its simplest form.
+ * @code
+ * std::string exp1 = {"x+5"};
+    std::string exp2 = {"2x+3y+12"};
+
+    const auto preproc1 = Oasis::PreProcessInFix(exp1);
+    const auto preproc2 = Oasis::PreProcessInFix(exp2);
+    auto midResult1 = Oasis::FromInFix(preproc1);
+    auto midResult2 = Oasis::FromInFix(preproc2);
+
+    const std::unique_ptr<Oasis::Expression> expression1 = std::move(midResult1).value();
+    const std::unique_ptr<Oasis::Expression> expression2 = std::move(midResult2).value();
+
+    Oasis::Exponent exp {
+        *expression1,
+        *expression2
+    };
+    Oasis::InFixSerializer result;
+
+    auto resultant = exp.Simplify();
+
+    std::println("Result: {}", resultant->Accept(result).value());
+    // Will print: ((x+5)^(((2*x)+(3*y))+12))
+ * @endcode
+ *
  */
-template <IExpression BaseT = Expression, IExpression PowerT = BaseT>
+template <typename BaseT = Expression, typename PowerT = BaseT>
 class Exponent : public BinaryExpression<Exponent, BaseT, PowerT> {
 public:
     Exponent() = default;
@@ -58,13 +91,6 @@ public:
         : BinaryExpression<Exponent, BaseT, PowerT>(base, power)
     {
     }
-
-    [[nodiscard]] auto ToString() const -> std::string final
-    {
-        return fmt::format("({}^{})", this->mostSigOp->ToString(), this->leastSigOp->ToString());
-    }
-
-    IMPL_SPECIALIZE(Exponent, BaseT, PowerT)
 
     auto operator=(const Exponent& other) -> Exponent& = default;
 

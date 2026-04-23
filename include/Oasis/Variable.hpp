@@ -17,6 +17,15 @@ namespace Oasis {
  *
  * Variables are used to represent unknown values in an expression. Variables
  * can have names such as "x" or "y" or "x_1" and so on.
+ *
+ * @section Parameters
+ * @tparam Variable the variable name of the class.
+ *
+ * @section ex1 Example Usage:
+ * @code
+ * Oasis::Variable{"x"};
+ * @endcode
+ *
  */
 class Variable : public LeafExpression<Variable> {
 public:
@@ -37,11 +46,7 @@ public:
      */
     [[nodiscard]] auto GetName() const -> std::string;
 
-    [[nodiscard]] auto ToString() const -> std::string final;
-    [[nodiscard]] auto Differentiate(const Expression& differentiationVariable) -> std::unique_ptr<Expression> final;
-
-    static auto Specialize(const Expression& other) -> std::unique_ptr<Variable>;
-    static auto Specialize(const Expression& other, tf::Subflow& subflow) -> std::unique_ptr<Variable>;
+    [[nodiscard]] auto Integrate(const Expression& integrationVariable) const -> std::unique_ptr<Expression> final;
 
     auto Substitute(const Expression& var, const Expression& val) -> std::unique_ptr<Expression> override;
 

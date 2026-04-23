@@ -6,10 +6,11 @@
 #define UNARYEXPRESSION_HPP
 
 #include "Expression.hpp"
+#include "Visit.hpp"
 
 namespace Oasis {
 
-template <template <IExpression> class DerivedT, IExpression OperandT>
+template <template <IExpression> class DerivedT, IExpression OperandT = Expression>
 class UnaryExpression : public Expression {
 
     using DerivedSpecialized = DerivedT<OperandT>;
@@ -36,11 +37,6 @@ public:
         return std::make_unique<DerivedSpecialized>(*static_cast<const DerivedSpecialized*>(this));
     }
 
-    auto Copy(tf::Subflow&) const -> std::unique_ptr<Expression> final
-    {
-        return std::make_unique<DerivedSpecialized>(*static_cast<const DerivedSpecialized*>(this));
-    }
-
     [[nodiscard]] auto Equals(const Expression& other) const -> bool final
     {
         if (!other.Is<DerivedSpecialized>()) {
@@ -56,12 +52,11 @@ public:
 
     [[nodiscard]] auto Generalize() const -> std::unique_ptr<Expression> final
     {
-        return std::make_unique<DerivedGeneralized>(*this);
-    }
-
-    auto Generalize(tf::Subflow& subflow) const -> std::unique_ptr<Expression> final
-    {
-        return DerivedGeneralized { *this }.Copy(subflow);
+        DerivedGeneralized generalized;
+        if (this->op) {
+            generalized.SetOperand(*this->op->Copy());
+        }
+        return std::make_unique<DerivedGeneralized>(generalized);
     }
 
     auto GetOperand() const -> const OperandT&
@@ -79,11 +74,6 @@ public:
         return this->GetType() == other.GetType();
     }
 
-    auto StructurallyEquivalent(const Expression& other, tf::Subflow&) const -> bool final
-    {
-        return this->GetType() == other.GetType();
-    }
-
     auto SetOperand(const OperandT& operand) -> void
     {
         if constexpr (std::same_as<OperandT, Expression>) {
@@ -97,38 +87,20 @@ public:
     {
         std::unique_ptr<Expression> right = ((GetOperand().Copy())->Substitute(var, val));
         DerivedT<Expression> comb = DerivedT<Expression> { *right };
-        auto ret = comb.Simplify();
-        return ret;
+        //        auto ret = comb.Accept();
+        return comb.Generalize();
+    }
+
+    auto AcceptInternal(Visitor& visitor) const -> any override
+    {
+        const auto generalized = Generalize();
+        const auto& derivedGeneralized = dynamic_cast<const DerivedGeneralized&>(*generalized);
+        return visitor.Visit(derivedGeneralized);
     }
 
 protected:
     std::unique_ptr<OperandT> op;
 };
-
-#define IMPL_SPECIALIZE_UNARYEXPR(DerivedT, OperandT)                                           \
-    static auto Specialize(const Expression& other) -> std::unique_ptr<DerivedT>                \
-    {                                                                                           \
-        if (!other.Is<DerivedT>()) {                                                            \
-            return nullptr;                                                                     \
-        }                                                                                       \
-                                                                                                \
-        auto specialized = std::make_unique<DerivedT<OperandT>>();                              \
-        std::unique_ptr<Expression> otherGeneralized = other.Generalize();                      \
-        const auto& otherUnary = dynamic_cast<const DerivedT<Expression>&>(*otherGeneralized);  \
-                                                                                                \
-        if (auto operand = OperandT::Specialize(otherUnary.GetOperand()); operand != nullptr) { \
-            specialized->op = std::move(operand);                                               \
-            return specialized;                                                                 \
-        }                                                                                       \
-                                                                                                \
-        return nullptr;                                                                         \
-    }                                                                                           \
-                                                                                                \
-    static auto Specialize(const Expression& other, tf::Subflow&) -> std::unique_ptr<DerivedT>  \
-    {                                                                                           \
-        /* TODO: Actually implement */                                                          \
-        return DerivedT<OperandT>::Specialize(other);                                           \
-    }
 
 } // Oasis
 
